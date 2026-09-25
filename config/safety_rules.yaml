@@ -1,0 +1,56 @@
+version: "1.0"
+
+destructive_keywords:
+  - "delete"
+  - "remove"
+  - "destroy"
+  - "format"
+  - "wipe"
+  - "drop"
+  - "purge"
+  - "erase"
+  - "terminate"
+  - "reset"
+  - "uninstall"
+  - "kill"
+  - "sil"
+  - "hesabı sil"
+  - "kaldır"
+  - "temizle"
+  - "sıfırla"
+  - "formatla"
+  - "yok et"
+
+financial_keywords:
+  - "pay"
+  - "checkout"
+  - "transfer"
+  - "wire"
+  - "send money"
+  - "charge"
+  - "subscribe"
+  - "authorize payment"
+  - "öde"
+  - "satın al"
+  - "para gönder"
+
+dangerous_commands:
+  - "rm -rf"
+  - "rmdir /s"
+  - "del /f"
+  - "format "
+  - "drop database"
+  - "drop table"
+  - "mkfs"
+  - ":(){ :|:& };:"
+  - "shutdown"
+
+risk_thresholds:
+  low_risk_max: 0.30
+  medium_risk_max: 0.64
+  high_risk_min: 0.65
+
+enforcement:
+  default_action_on_high_risk: "BLOCK"  # "BLOCK" raises PermissionError, "REQUIRE_CONFIRMATION" requests user approval
+  allow_override_with_flag: true
+  log_blocked_actions: true

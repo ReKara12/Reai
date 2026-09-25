@@ -1,0 +1,47 @@
+model:
+  checkpoint: "convaiinnovations/laya"
+  subfolder: "typed-decisions"
+  max_context_tokens: 512
+  fallback_to_mock: true
+  latency_budget_ms: 50.0
+  device: "cpu"
+
+perception:
+  max_pruned_elements: 25
+  prune_non_interactive: true
+  prune_empty_text: true
+  sort_by_focus: true
+  include_invisible: false
+
+actuator:
+  headless: false
+  typing_interval_sec: 0.02
+  click_delay_sec: 0.05
+  mock_mode: false
+
+verifier:
+  max_stuck_retries: 3
+  mutation_timeout_sec: 2.0
+
+guardrail:
+  strict_mode: true
+  blast_radius_threshold: 0.65
+  require_confirmation: true
+
+orchestrator:
+  max_loop_iterations: 30
+  step_delay_sec: 0.1
+
+llm:
+  provider: "ollama"
+  model: "qwen2.5:3b"
+  host: "http://127.0.0.1:11434"
+  temperature: 0.4
+
+voice:
+  mode: "ptt"
+  ptt_key: "alt_r"
+  sample_rate: 16000
+  stt_model: "base"
+  language: "tr"
+

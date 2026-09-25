@@ -1,0 +1,15 @@
+pydantic>=2.0.0
+pyyaml>=6.0
+pyautogui>=0.9.50
+pywinauto>=0.6.8; platform_system == "Windows"
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+torch>=2.0.0
+transformers>=4.48.0
+laya>=0.3.0
+rich>=13.0.0
+faster-whisper>=1.0.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+pynput>=1.7.6
+requests>=2.31.0
