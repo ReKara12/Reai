@@ -118,10 +118,9 @@ class ReflexStateMachine:
         # 4. Act
         generated_text: Optional[str] = None
         if decision.action_type == "CALL_LLM":
-            logger.info("Dispatching to System 2 Generative Fallback.")
             generated_text = self.generative_provider.generate(
                 prompt=user_goal,
-                context=state.format_candidates_prompt(),
+                context=f"Active Window: {state.active_window}",
             )
             # If target input element is focused, type the generated response
             if target_element:

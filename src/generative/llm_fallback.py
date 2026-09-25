@@ -33,14 +33,15 @@ class OllamaGenerativeProvider(BaseGenerativeProvider):
     def generate(self, prompt: str, context: Optional[str] = None) -> str:
         url = f"{self.host}/api/generate"
         system_instruction = (
-            "Sen yardımsever, profesyonel bir masaüstü yapay zeka asistanısın. "
-            "Kullanıcının talep ettiği metinleri, e-postaları, özetleri veya kodları "
-            "doğrudan uygulamaya yapıştırılmaya hazır, temiz ve eksiksiz bir formatta hazırla."
+            "Sen masaüstü metin yazma ve taslak hazırlama asistanısın. "
+            "Kullanıcının talep ettiği metni, e-postayı, özeti veya içeriği DOĞRUDAN üret. "
+            "Asla 'İşte metniniz:', adım açıklaması, UI analizi veya nasıl tıklanacağına dair kılavuz yazma. "
+            "Sadece ve sadece kullanıcının yazılmasını istediği içeriği temiz bir şekilde döndür."
         )
 
         full_prompt = prompt
         if context:
-            full_prompt = f"Bağlam ve Açık Pencereler:\n{context}\n\nTalep:\n{prompt}"
+            full_prompt = f"Bağlam:\n{context}\n\nTalep:\n{prompt}"
 
         payload = {
             "model": self.model_name,

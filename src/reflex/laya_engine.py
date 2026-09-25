@@ -123,7 +123,6 @@ class LayaReflexEngine:
                     "TYPE": "Type input text into the active edit/input field",
                     "SCROLL": "Scroll viewport up or down",
                     "WAIT": "Pause briefly for UI asynchronous transition",
-                    "CALL_LLM": "Activate System 2 LLM fallback for free-form generative text synthesis",
                 },
             },
             "is_task_completed": {
@@ -149,6 +148,27 @@ class LayaReflexEngine:
         t_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
         decision.execution_latency_ms = round(t_elapsed_ms, 2)
         return decision
+
+    def _extract_active_subgoal(self, goal: str, active_window: str) -> str:
+        """Strips completed app-launch prefixes when target app is already in the foreground."""
+        norm = normalize_text(goal)
+        act_lower = active_window.lower() if active_window else ""
+
+        # English patterns: 'open <app> and/then <subgoal>'
+        m_en = re.search(r"^(?:open|launch|switch to)\s+([a-zA-Z0-9_\-]+)\s+(?:and|then)\s+(.+)$", goal, re.IGNORECASE)
+        if m_en:
+            app_name, remaining = m_en.group(1).lower(), m_en.group(2).strip()
+            if app_name in act_lower:
+                return remaining
+
+        # Turkish patterns: 'önüme <app> açıp <subgoal>' / '<app>'i aç ve <subgoal>'
+        m_tr = re.search(r"^(?:onume\s+)?([a-zA-Z0-9_\-]+)(?:'i|'ı|'yi|'yı|i|ı)?\s+(?:acip|ac\s+ve|getir\s+ve)\s+(.+)$", norm)
+        if m_tr:
+            app_name, remaining = m_tr.group(1).lower(), m_tr.group(2).strip()
+            if app_name in act_lower:
+                return remaining
+
+        return goal
 
     def _predict_with_laya(self, state: AgentState) -> ReflexDecision:
         """Performs inference via the real Laya agent."""
@@ -177,9 +197,14 @@ class LayaReflexEngine:
                 reasoning=f"Detected application '{app_to_focus}' in goal while current window is '{state.active_window}'. Bringing to front.",
             )
 
+        active_subgoal = self._extract_active_subgoal(state.user_goal, state.active_window)
         questions = self.build_query_questions(state)
+        if active_subgoal != state.user_goal:
+            questions["selected_element_id"]["instructions"] = f"Which element best matches the user's intent: '{active_subgoal}'?"
+            questions["action_type"]["instructions"] = f"What discrete OS action should be performed for goal '{active_subgoal}'?"
+
         compact_state = {
-            "goal": state.user_goal,
+            "goal": active_subgoal,
             "window": state.active_window,
             "elements": [el.to_compact_str() for el in state.available_elements],
             "history": state.history[-3:] if state.history else [],
@@ -197,6 +222,25 @@ class LayaReflexEngine:
         if selected_id == "none":
             selected_id = None
 
+        # Robust Decision Fusion:
+        # If Laya selected a container matching the active window title (e.g. 'Antigravity')
+        # while an interactive control matches the subgoal, fuse with the action control!
+        fallback_decision = self._predict_with_fallback(state)
+        if fallback_decision.selected_element_id and fallback_decision.selected_element_id != selected_id:
+            chosen_elem = next((e for e in state.available_elements if e.id == selected_id), None)
+            act_win_base = state.active_window.split("[")[0].strip().lower()
+            if chosen_elem and (
+                chosen_elem.label.lower() in act_win_base
+                or chosen_elem.control_type.lower() in ("window", "control", "pane", "titlebar")
+            ):
+                logger.info(
+                    "Laya selected inert container '%s'; fusing with high-confidence action control '%s'.",
+                    selected_id,
+                    fallback_decision.selected_element_id,
+                )
+                selected_id = fallback_decision.selected_element_id
+                action_type = fallback_decision.action_type
+
         text_to_type = self._extract_text_to_type(state.user_goal, action_type)
 
         return ReflexDecision(
@@ -213,7 +257,8 @@ class LayaReflexEngine:
 
         Accurately parses multilingual goals, matching candidate elements and action types.
         """
-        raw_goal = state.user_goal.strip()
+        active_subgoal = self._extract_active_subgoal(state.user_goal, state.active_window)
+        raw_goal = active_subgoal.strip()
         goal_norm = normalize_text(raw_goal)
         elements = state.available_elements
 
@@ -466,6 +511,11 @@ class LayaReflexEngine:
             score += 1.5
         elif action == "TYPE" and ctrl_lower in ("edit", "textbox", "input"):
             score += 2.0
+
+        # Penalize non-interactive container controls that merely label the active window/app
+        if label_norm and any(app in label_norm for app in ["antigravity", "chrome", "notepad", "terminal"]):
+            if ctrl_lower not in ("button", "menuitem", "listitem", "edit"):
+                score -= 6.0
 
         # Boost enabled elements
         if elem.is_enabled:
