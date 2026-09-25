@@ -63,6 +63,11 @@ class BaseActuator(ABC):
         pass
 
     @abstractmethod
+    def navigate_url(self, url: str) -> None:
+        """Navigates to a target URL in the default or active browser."""
+        pass
+
+    @abstractmethod
     def scroll(self, clicks: int) -> None:
         """Scrolls the mouse wheel by the specified amount."""
         pass
@@ -153,6 +158,11 @@ class BaseActuator(ABC):
                 self.hotkey(*[k.strip().lower() for k in keys])
             return
 
+        if action == "NAVIGATE_URL":
+            url = decision.text_to_type or "https://www.google.com"
+            self.navigate_url(url)
+            return
+
         if action == "SCROLL":
             self.scroll(-3)
             return
@@ -169,11 +179,17 @@ COMMON_APP_MAP = {
     "notepad": "notepad.exe",
     "not defteri": "notepad.exe",
     "chrome": os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+    "firefox": os.path.expandvars(r"%PROGRAMFILES%\Mozilla Firefox\firefox.exe"),
+    "edge": os.path.expandvars(r"%PROGRAMFILES(X86)%\Microsoft\Edge\Application\msedge.exe"),
+    "brave": os.path.expandvars(r"%PROGRAMFILES%\BraveSoftware\Brave-Browser\Application\brave.exe"),
     "calc": "calc.exe",
     "hesap makinesi": "calc.exe",
     "spotify": os.path.expandvars(r"%APPDATA%\Spotify\Spotify.exe"),
     "code": os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
     "vscode": os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
+    "terminal": "wt.exe",
+    "powershell": "powershell.exe",
+    "explorer": "explorer.exe",
 }
 
 
@@ -263,6 +279,18 @@ class PyAutoGUIActuator(BaseActuator):
             self._pyautogui.hotkey(*keys)
         except Exception as exc:
             logger.error("PyAutoGUI hotkey error: %s", exc)
+
+    def navigate_url(self, url: str) -> None:
+        if self.headless:
+            logger.info("[HEADLESS ACTUATOR] Navigate URL: '%s'", url)
+            return
+        try:
+            import webbrowser
+            full_url = url if url.startswith(("http://", "https://")) else f"https://{url}"
+            logger.info("Opening URL directly via OS browser: %s", full_url)
+            webbrowser.open(full_url)
+        except Exception as exc:
+            logger.error("Failed to navigate to URL '%s': %s", url, exc)
 
     def scroll(self, clicks: int) -> None:
         if self.headless or not self._pyautogui:
@@ -406,6 +434,10 @@ class MockActuator(BaseActuator):
     def hotkey(self, *keys: str) -> None:
         logger.info("[MOCK ACTUATOR] Hotkey: %s", "+".join(keys))
         self.events.append({"action": "hotkey", "keys": keys, "timestamp": time.time()})
+
+    def navigate_url(self, url: str) -> None:
+        logger.info("[MOCK ACTUATOR] Navigate URL: '%s'", url)
+        self.events.append({"action": "navigate_url", "url": url, "timestamp": time.time()})
 
     def scroll(self, clicks: int) -> None:
         logger.info("[MOCK ACTUATOR] Scroll: %d", clicks)

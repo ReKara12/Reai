@@ -197,6 +197,52 @@ class LayaReflexEngine:
                 reasoning=f"Detected application '{app_to_focus}' in goal while current window is '{state.active_window}'. Bringing to front.",
             )
 
+        # 3. Fast-path: Check for hotkey intent (e.g. new tab ctrl+t, close tab ctrl+w)
+        hotkey_info = self._extract_hotkey_intent(goal_norm, state)
+        if hotkey_info:
+            hotkey_str, hotkey_reason = hotkey_info
+            return ReflexDecision(
+                selected_element_id=None,
+                action_type="HOTKEY",
+                text_to_type=hotkey_str,
+                confidence=0.99,
+                is_task_completed=False,
+                reasoning=hotkey_reason,
+            )
+
+        # 4. Fast-path: Check for direct URL navigation (e.g. go to youtube, visit website)
+        target_url = self._extract_url_navigation(raw_goal)
+        if target_url:
+            hist_str = " ".join(state.history)
+            if "NAVIGATE_URL" in hist_str or target_url in hist_str:
+                return ReflexDecision(
+                    selected_element_id=None,
+                    action_type="WAIT",
+                    confidence=0.99,
+                    is_task_completed=True,
+                    reasoning=f"URL navigation to '{target_url}' successfully executed.",
+                )
+            return ReflexDecision(
+                selected_element_id=None,
+                action_type="NAVIGATE_URL",
+                text_to_type=target_url,
+                confidence=0.99,
+                is_task_completed=False,
+                reasoning=f"Opening URL '{target_url}' directly via OS browser actuator.",
+            )
+
+        # 5. Fast-path: Standalone hotkey completion check
+        if any(w in goal_norm for w in ["new tab", "yeni sekme", "close tab", "sekme kapat", "refresh page", "sayfayi yenile"]):
+            hist_str = " ".join(state.history).lower()
+            if any(hk in hist_str for hk in ["ctrl+t", "ctrl+w", "ctrl+r"]):
+                return ReflexDecision(
+                    selected_element_id=None,
+                    action_type="WAIT",
+                    confidence=0.99,
+                    is_task_completed=True,
+                    reasoning="Hotkey shortcut completed successfully.",
+                )
+
         active_subgoal = self._extract_active_subgoal(state.user_goal, state.active_window)
         questions = self.build_query_questions(state)
         if active_subgoal != state.user_goal:
@@ -312,6 +358,44 @@ class LayaReflexEngine:
                 is_task_completed=False,
                 reasoning=f"Detected application '{app_to_focus}' in goal while current window is '{state.active_window}'. Bringing to front.",
             )
+        elif hotkey_info := self._extract_hotkey_intent(goal_norm, state):
+            hotkey_str, hotkey_reason = hotkey_info
+            return ReflexDecision(
+                selected_element_id=None,
+                action_type="HOTKEY",
+                text_to_type=hotkey_str,
+                confidence=0.99,
+                is_task_completed=False,
+                reasoning=hotkey_reason,
+            )
+        elif target_url := self._extract_url_navigation(raw_goal):
+            hist_str = " ".join(state.history)
+            if "NAVIGATE_URL" in hist_str or target_url in hist_str:
+                return ReflexDecision(
+                    selected_element_id=None,
+                    action_type="WAIT",
+                    confidence=0.99,
+                    is_task_completed=True,
+                    reasoning=f"URL navigation to '{target_url}' successfully executed.",
+                )
+            return ReflexDecision(
+                selected_element_id=None,
+                action_type="NAVIGATE_URL",
+                text_to_type=target_url,
+                confidence=0.99,
+                is_task_completed=False,
+                reasoning=f"Opening URL '{target_url}' directly via OS browser actuator.",
+            )
+        elif any(w in goal_norm for w in ["new tab", "yeni sekme", "close tab", "sekme kapat", "refresh page", "sayfayi yenile"]):
+            hist_str = " ".join(state.history).lower()
+            if any(hk in hist_str for hk in ["ctrl+t", "ctrl+w", "ctrl+r"]):
+                return ReflexDecision(
+                    selected_element_id=None,
+                    action_type="WAIT",
+                    confidence=0.99,
+                    is_task_completed=True,
+                    reasoning="Hotkey shortcut completed successfully.",
+                )
         elif any(term in goal_norm for term in ["scroll", "kaydir"]):
             action_type = "SCROLL"
         elif any(term in goal_norm for term in ["double click", "cift tikla"]):
@@ -401,9 +485,9 @@ class LayaReflexEngine:
             return None
 
         apps = [
-            "antigravity", "chrome", "notepad", "not defteri", "spotify", "vscode",
-            "code", "calc", "hesap makinesi", "terminal", "powershell", "explorer",
-            "dosya gezgini", "word", "excel"
+            "antigravity", "chrome", "firefox", "edge", "brave", "notepad", "not defteri",
+            "spotify", "vscode", "code", "calc", "hesap makinesi", "terminal", "powershell",
+            "explorer", "dosya gezgini", "word", "excel"
         ]
 
         detected_app = None
@@ -426,6 +510,96 @@ class LayaReflexEngine:
             act_lower = state.active_window.lower() if state.active_window else ""
             if detected_app.lower() not in act_lower:
                 return detected_app
+
+        return None
+
+    def _extract_hotkey_intent(self, goal_norm: str, state: AgentState) -> Optional[Tuple[str, str]]:
+        """Detects hotkey shortcuts required by the goal if not already performed in session."""
+        hist = " ".join(state.history).lower()
+
+        # 1. New Tab: 'new tab', 'yeni sekme', 'tab ac'
+        if any(w in goal_norm for w in ["new tab", "yeni sekme", "yeni bir sekme", "baska sekme"]):
+            if "ctrl+t" not in hist:
+                return "ctrl+t", "Opening a new browser tab via ctrl+t"
+
+        # 2. Close Tab: 'close tab', 'sekme kapat', 'sekmeyi kapat'
+        if any(w in goal_norm for w in ["close tab", "sekme kapat", "sekmeyi kapat", "tabi kapat"]):
+            if "ctrl+w" not in hist:
+                return "ctrl+w", "Closing active browser tab via ctrl+w"
+
+        # 3. New Window: 'new window', 'yeni pencere'
+        if any(w in goal_norm for w in ["new window", "yeni pencere"]):
+            if "ctrl+n" not in hist:
+                return "ctrl+n", "Opening a new window via ctrl+n"
+
+        # 4. Refresh / Reload: 'refresh page', 'sayfayi yenile', 'yenile'
+        if any(w in goal_norm for w in ["refresh page", "sayfayi yenile", "sayfa yenile", "reload"]):
+            if "ctrl+r" not in hist and "f5" not in hist:
+                return "ctrl+r", "Refreshing page via ctrl+r"
+
+        # 5. Address Bar Focus: 'address bar', 'adres cubugu', 'url cubugu'
+        if any(w in goal_norm for w in ["address bar", "adres cubugu", "url cubugu"]):
+            if "ctrl+l" not in hist:
+                return "ctrl+l", "Focusing browser address bar via ctrl+l"
+
+        return None
+
+    def _extract_url_navigation(self, raw_goal: str) -> Optional[str]:
+        """Extracts web URL or website target from natural language navigation goal."""
+        # Never treat explicit text typing into fields as URL navigation
+        if re.search(r"\b(type|write|yaz|gir)\b.*(?:into|in|to|alanina|kutusuna|kismina)", raw_goal, re.IGNORECASE):
+            return None
+
+        norm = normalize_text(raw_goal)
+
+        # 1. Direct explicit URL match
+        url_match = re.search(r"https?://[^\s]+", raw_goal)
+        if url_match:
+            return url_match.group(0).rstrip(".,;)'\"")
+
+        # 2. Domain pattern (must not be an email address like user@example.com)
+        domain_match = re.search(r"(?<![@\w])([a-zA-Z0-9_\-]+\.(?:com|org|net|io|edu|gov|co|ai|dev|app|me|tr)(?:/[^\s]*)?)\b", raw_goal, re.IGNORECASE)
+        if domain_match:
+            candidate = domain_match.group(1).rstrip(".,;')\"'")
+            idx = raw_goal.find(candidate)
+            if idx > 0 and raw_goal[idx - 1] == "@":
+                pass
+            else:
+                return f"https://{candidate}"
+
+        # 3. Search query intent (e.g. search cats on google, google'da kediler ara)
+        search_match = re.search(r"(?:search|ara)\s+['\"]?(.+?)['\"]?\s+(?:on|in|from|uzerinde)\s+(?:google|web)\b", raw_goal, re.IGNORECASE)
+        if search_match:
+            q = search_match.group(1).strip()
+            return f"https://www.google.com/search?q={q.replace(' ', '+')}"
+        tr_search = re.search(r"(?:google|web)(?:'da|'de|da|de)\s+['\"]?(.+?)['\"]?\s+ara\b", norm, re.IGNORECASE)
+        if tr_search:
+            q = tr_search.group(1).strip()
+            return f"https://www.google.com/search?q={q.replace(' ', '+')}"
+
+        # 4. Known popular websites with navigation verbs
+        SITE_MAP = {
+            "youtube": "https://www.youtube.com",
+            "google": "https://www.google.com",
+            "github": "https://github.com",
+            "twitter": "https://x.com",
+            "x.com": "https://x.com",
+            "reddit": "https://www.reddit.com",
+            "wikipedia": "https://www.wikipedia.org",
+            "amazon": "https://www.amazon.com",
+            "linkedin": "https://www.linkedin.com",
+            "netflix": "https://www.netflix.com",
+            "chatgpt": "https://chatgpt.com",
+            "openai": "https://chatgpt.com",
+        }
+        for site, url in SITE_MAP.items():
+            if re.search(rf"\b{re.escape(site)}(?:'a|'e|'ye|'ya|a|e)?\b", norm):
+                # Check for navigation or visit intent
+                if any(w in norm for w in ["git", "ac", "acip", "bak", "go", "open", "visit", "navigate", "load", "launch"]):
+                    return url
+                # Or if site is explicitly named with tab context
+                if "tab" in norm or "sekme" in norm:
+                    return url
 
         return None
 

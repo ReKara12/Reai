@@ -166,9 +166,10 @@ class ReflexStateMachine:
             pre_hash, decision.action_type, decision.selected_element_id
         )
 
+        target_desc = decision.text_to_type if decision.text_to_type else decision.selected_element_id
         summary_event = (
             f"Step {self.step_count}: {decision.action_type} on "
-            f"'{decision.selected_element_id}' (mutated={mutated})"
+            f"'{target_desc}' (mutated={mutated})"
         )
         self.history.append(summary_event)
 

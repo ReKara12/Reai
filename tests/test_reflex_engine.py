@@ -170,3 +170,56 @@ def test_app_focus_and_multi_stage_sequence():
     assert d3.selected_element_id == "btn_quick"
 
 
+def test_browser_hotkey_and_url_navigation_sequence():
+    """Verifies Andy Gao style OS primitives: focus app, hotkey ctrl+t, navigate URL."""
+    engine = LayaReflexEngine(force_mock=True)
+    goal = "open firefox and open a new tab and go to youtube in that new tab"
+
+    # Step 1: Firefox not focused -> FOCUS_WINDOW
+    s1 = AgentState(user_goal=goal, active_window="PowerShell [powershell.exe]", available_elements=[])
+    d1 = engine.predict(s1)
+    assert d1.action_type == "FOCUS_WINDOW"
+    assert d1.text_to_type == "firefox"
+
+    # Step 2: Firefox focused -> HOTKEY ctrl+t
+    s2 = AgentState(
+        user_goal=goal,
+        active_window="Mozilla Firefox [firefox.exe]",
+        available_elements=[],
+        history=["Step 1: FOCUS_WINDOW on 'firefox' (mutated=True)"],
+    )
+    d2 = engine.predict(s2)
+    assert d2.action_type == "HOTKEY"
+    assert d2.text_to_type == "ctrl+t"
+
+    # Step 3: ctrl+t executed -> NAVIGATE_URL https://www.youtube.com
+    s3 = AgentState(
+        user_goal=goal,
+        active_window="New Tab - Mozilla Firefox [firefox.exe]",
+        available_elements=[],
+        history=[
+            "Step 1: FOCUS_WINDOW on 'firefox' (mutated=True)",
+            "Step 2: HOTKEY on 'ctrl+t' (mutated=True)",
+        ],
+    )
+    d3 = engine.predict(s3)
+    assert d3.action_type == "NAVIGATE_URL"
+    assert d3.text_to_type == "https://www.youtube.com"
+
+    # Step 4: NAVIGATE_URL executed -> is_task_completed = True
+    s4 = AgentState(
+        user_goal=goal,
+        active_window="YouTube - Mozilla Firefox [firefox.exe]",
+        available_elements=[],
+        history=[
+            "Step 1: FOCUS_WINDOW on 'firefox' (mutated=True)",
+            "Step 2: HOTKEY on 'ctrl+t' (mutated=True)",
+            "Step 3: NAVIGATE_URL on 'https://www.youtube.com' (mutated=True)",
+        ],
+    )
+    d4 = engine.predict(s4)
+    assert d4.action_type == "WAIT"
+    assert d4.is_task_completed is True
+
+
+
