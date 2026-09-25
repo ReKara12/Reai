@@ -15,6 +15,7 @@ def main():
         print("  python run.py benchmark   - Run System 1 latency benchmark")
         print("  python run.py demo        - Run interactive Tkinter GUI demo")
         print("  python run.py voice       - Run 100% local voice assistant (Push-to-Talk)")
+        print("  python run.py train [args]- Run SFT fine-tuning on GPU overnight (silent, no UI)")
         print("  python run.py cli [args]  - Forward arguments to src.main")
         return
 
@@ -27,6 +28,12 @@ def main():
         sys.exit(subprocess.call([sys.executable, "run_demo.py"], cwd=str(root)))
     elif cmd == "voice":
         sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--voice"] + args[1:], cwd=str(root)))
+    elif cmd == "train":
+        train_data_path = root / "data" / "train_os_reflex.json"
+        if not train_data_path.exists():
+            print("Generating synthetic OS reflex dataset...")
+            subprocess.run([sys.executable, "src/training/dataset_generator.py"], cwd=str(root), check=True)
+        sys.exit(subprocess.call([sys.executable, "src/training/train_laya.py"] + args[1:], cwd=str(root)))
     elif cmd == "cli":
         sys.exit(subprocess.call([sys.executable, "-m", "src.main"] + args[1:], cwd=str(root)))
     else:

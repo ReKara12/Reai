@@ -53,11 +53,20 @@ class LayaReflexEngine:
         self,
         checkpoint: str = "convaiinnovations/laya",
         subfolder: str = "typed-decisions",
+        device: Optional[str] = None,
         fallback_to_mock: bool = True,
         force_mock: Optional[bool] = None,
     ):
         self.checkpoint = checkpoint
         self.subfolder = subfolder
+        if device is None:
+            try:
+                import torch
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                self.device = "cpu"
+        else:
+            self.device = device
         self.fallback_to_mock = fallback_to_mock
         self.force_mock = (
             force_mock
@@ -75,10 +84,11 @@ class LayaReflexEngine:
 
         try:
             import laya
-            logger.info("Initializing Laya Agent with checkpoint: %s (subfolder: %s)", self.checkpoint, self.subfolder)
+            logger.info("Initializing Laya Agent with checkpoint: %s (subfolder: %s, device: %s)", self.checkpoint, self.subfolder, self.device)
             self.agent = laya.Agent(
                 model_id_or_path=self.checkpoint,
                 subfolder=self.subfolder,
+                device=self.device,
                 fast=True,
             )
             logger.info("Laya Agent initialized successfully.")
