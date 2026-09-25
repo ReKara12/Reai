@@ -143,10 +143,10 @@ def test_app_focus_and_multi_stage_sequence():
     assert d1.action_type == "FOCUS_WINDOW"
     assert d1.text_to_type == "antigravity"
 
-    # Stage 2: Antigravity focused -> Clicks Create New Project
+    # Stage 2: Antigravity focused with real-world workspace title -> Clicks Create New Project
     s2 = AgentState(
         user_goal=goal,
-        active_window="Antigravity",
+        active_window="Reflex Agent OS Controlle... [Antigravity.exe]",
         available_elements=[
             UIElement(id="btn_create", label="Create New Project", control_type="Button", bbox=(10, 10, 100, 30)),
             UIElement(id="btn_open", label="Open Folder", control_type="Button", bbox=(10, 50, 100, 30)),
@@ -159,7 +159,7 @@ def test_app_focus_and_multi_stage_sequence():
     # Stage 3: Modal opens -> Clicks Quick Start
     s3 = AgentState(
         user_goal=goal,
-        active_window="Antigravity - Create Project",
+        active_window="Quick Pick [Antigravity.exe]",
         available_elements=[
             UIElement(id="btn_quick", label="Quick Start", control_type="Button", bbox=(20, 20, 100, 30)),
             UIElement(id="btn_custom", label="Custom", control_type="Button", bbox=(20, 60, 100, 30)),
@@ -168,4 +168,5 @@ def test_app_focus_and_multi_stage_sequence():
     d3 = engine.predict(s3)
     assert d3.action_type == "CLICK"
     assert d3.selected_element_id == "btn_quick"
+
 

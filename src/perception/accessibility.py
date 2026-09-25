@@ -50,23 +50,75 @@ class WindowsAccessibilityDriver(BaseAccessibilityDriver):
             self._desktop = None
 
     def get_active_window_title(self) -> str:
-        try:
-            import win32gui
-            hwnd = win32gui.GetForegroundWindow()
-            if hwnd:
-                title = win32gui.GetWindowText(hwnd)
-                return title if title else "Active Window"
-        except Exception as exc:
-            logger.debug("win32gui foreground lookup failed: %s", exc)
+        if sys.platform != "win32":
+            return "Active Window"
 
         try:
-            if self._desktop:
-                top = self._desktop.top_window()
-                return top.window_text() or "Desktop Window"
-        except Exception as exc:
-            logger.debug("pywinauto top_window lookup failed: %s", exc)
+            import ctypes
+            from ctypes import wintypes
 
-        return "Default Window"
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd or not user32.IsWindowVisible(hwnd):
+                # Query interactive input desktop if foreground window is not set in current subshell
+                h_input = user32.OpenInputDesktop(0, False, 0x01FF)
+                if h_input:
+                    top_wins = []
+                    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+                    ignore_titles = {
+                        "program manager", "task switching", "medal overlay",
+                        "nvidia geforce overlay", "microsoft text input application"
+                    }
+                    def enum_cb(h, _):
+                        if user32.IsWindowVisible(h):
+                            length = user32.GetWindowTextLengthW(h)
+                            if length > 0:
+                                buff = ctypes.create_unicode_buffer(length + 1)
+                                user32.GetWindowTextW(h, buff, length + 1)
+                                title = buff.value.strip()
+                                if title and title.lower() not in ignore_titles:
+                                    top_wins.append(h)
+                                    return False
+                        return True
+                    user32.EnumDesktopWindows(h_input, WNDENUMPROC(enum_cb), 0)
+                    if top_wins:
+                        hwnd = top_wins[0]
+
+            if not hwnd:
+                return "Desktop Window"
+
+            length = user32.GetWindowTextLengthW(hwnd)
+            title = ""
+            if length > 0:
+                buff = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buff, length + 1)
+                title = buff.value.strip()
+
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            proc_name = ""
+            if pid.value:
+                h_proc = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+                if h_proc:
+                    buf_size = wintypes.DWORD(1024)
+                    proc_buf = ctypes.create_unicode_buffer(1024)
+                    if kernel32.QueryFullProcessImageNameW(h_proc, 0, proc_buf, ctypes.byref(buf_size)):
+                        proc_name = proc_buf.value.split("\\")[-1]
+                    kernel32.CloseHandle(h_proc)
+
+            if proc_name and title:
+                return f"{title} [{proc_name}]"
+            elif title:
+                return title
+            elif proc_name:
+                return proc_name
+            return "Active Window"
+        except Exception as exc:
+            logger.debug("Active window resolution failed: %s", exc)
+            return "Active Window"
 
     def get_ui_elements(self, window_title: Optional[str] = None) -> List[UIElement]:
         results: List[UIElement] = []
