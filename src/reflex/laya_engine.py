@@ -240,6 +240,12 @@ class LayaReflexEngine:
                 )
                 selected_id = fallback_decision.selected_element_id
                 action_type = fallback_decision.action_type
+                is_task_completed = fallback_decision.is_task_completed
+                confidence = fallback_decision.confidence
+
+        # CRITICAL SAFETY: An active actuation (CLICK/TYPE/FOCUS) can NEVER be marked as completed before execution!
+        if selected_id is not None and action_type in ("CLICK", "DOUBLE_CLICK", "TYPE", "FOCUS_WINDOW"):
+            is_task_completed = False
 
         text_to_type = self._extract_text_to_type(state.user_goal, action_type)
 

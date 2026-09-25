@@ -82,8 +82,8 @@ class ReflexStateMachine:
             decision.execution_latency_ms or 0.0,
         )
 
-        # If task is already completed, return immediately
-        if decision.is_task_completed:
+        # If task is already completed without any pending action, return immediately
+        if decision.is_task_completed and (decision.action_type == "WAIT" or not decision.selected_element_id):
             logger.info("Task completed according to System 1.")
             return {
                 "step": self.step_count,
