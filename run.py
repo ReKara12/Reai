@@ -15,6 +15,7 @@ def main():
         print("  python run.py benchmark   - Run System 1 latency benchmark")
         print("  python run.py demo        - Run interactive Tkinter GUI demo")
         print("  python run.py voice       - Run 100% local voice assistant (Push-to-Talk)")
+        print("  python run.py hud [args]  - Launch Andy Gao-style Floating Glassmorphic HUD")
         print("  python run.py train [args]- Run SFT fine-tuning on GPU overnight (silent, no UI)")
         print("  python run.py cli [args]  - Forward arguments to src.main")
         return
@@ -26,6 +27,8 @@ def main():
         sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--benchmark", "--mock"], cwd=str(root)))
     elif cmd == "demo":
         sys.exit(subprocess.call([sys.executable, "run_demo.py"], cwd=str(root)))
+    elif cmd == "hud":
+        sys.exit(subprocess.call([sys.executable, "-m", "src.ui.floating_hud"] + args[1:], cwd=str(root)))
     elif cmd == "voice":
         sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--voice"] + args[1:], cwd=str(root)))
     elif cmd == "train":
