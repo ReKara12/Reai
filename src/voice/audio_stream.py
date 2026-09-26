@@ -128,6 +128,12 @@ class AudioCaptureStream:
     def stop(self) -> None:
         """Stops the audio capture stream."""
         self._is_active = False
+        if self._keyboard_listener:
+            try:
+                self._keyboard_listener.stop()
+            except Exception:
+                pass
+            self._keyboard_listener = None
         if self._stream:
             try:
                 self._stream.stop()

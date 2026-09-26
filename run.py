@@ -1,8 +1,11 @@
 """Convenience runner script for Reflex-Agent."""
 
+import os
 import sys
 import subprocess
 from pathlib import Path
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 
 def main():
