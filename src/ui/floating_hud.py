@@ -269,7 +269,7 @@ class FloatingHUD(QMainWindow):
     sig_voice_partial = pyqtSignal(str)
     sig_voice_final = pyqtSignal(str)
 
-    def __init__(self, mock_mode: bool = False, enable_voice: bool = True, parent=None):
+    def __init__(self, mock_mode: bool = False, enable_voice: bool = False, parent=None):
         super().__init__(parent)
         self.mock_mode = mock_mode
         self.enable_voice = enable_voice
@@ -663,7 +663,7 @@ class FloatingHUD(QMainWindow):
             event.accept()
 
 
-def launch_hud(mock: bool = False, enable_voice: bool = True):
+def launch_hud(mock: bool = False, enable_voice: bool = False):
     """Entry point to launch the floating HUD overlay."""
     app = QApplication.instance() or QApplication(sys.argv)
     hud = FloatingHUD(mock_mode=mock, enable_voice=enable_voice)
@@ -673,5 +673,5 @@ def launch_hud(mock: bool = False, enable_voice: bool = True):
 
 if __name__ == "__main__":
     mock_flag = "--mock" in sys.argv
-    no_voice = "--no-voice" in sys.argv
-    sys.exit(launch_hud(mock=mock_flag, enable_voice=not no_voice))
+    voice_flag = "--voice" in sys.argv
+    sys.exit(launch_hud(mock=mock_flag, enable_voice=voice_flag))
