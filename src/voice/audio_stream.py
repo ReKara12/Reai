@@ -26,12 +26,14 @@ class AudioCaptureStream:
         push_to_talk: bool = True,
         ptt_key_name: str = DEFAULT_PTT_KEY,
         energy_threshold: float = SILENCE_THRESHOLD_RMS,
+        device_index: Optional[int] = None,
     ):
         self.sample_rate = sample_rate
         self.block_size = block_size
         self.push_to_talk = push_to_talk
         self.ptt_key_name = ptt_key_name
         self.energy_threshold = energy_threshold
+        self.device_index = device_index
 
         self._audio_queue: queue.Queue = queue.Queue(maxsize=100)
         self._is_active = False
@@ -109,6 +111,7 @@ class AudioCaptureStream:
         try:
             import sounddevice as sd
             self._stream = sd.InputStream(
+                device=self.device_index,
                 samplerate=self.sample_rate,
                 blocksize=self.block_size,
                 channels=1,
