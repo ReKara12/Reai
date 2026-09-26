@@ -98,6 +98,7 @@ def main() -> None:
     parser.add_argument("--ptt-key", type=str, default="alt_r", help="Push-to-talk key (default: alt_r)")
     parser.add_argument("--llm", type=str, default="qwen2.5:3b", help="Local LLM model name (default: qwen2.5:3b)")
     parser.add_argument("--fast", action="store_true", help="Run ultra-fast sub-millisecond deterministic reflex policy (<1ms) bypassing CPU transformer latency")
+    parser.add_argument("--weights", type=str, default=None, help="Path to fine-tuned model checkpoint (.pt)")
 
     args = parser.parse_args()
 
@@ -121,7 +122,7 @@ def main() -> None:
     driver = get_platform_driver(mock=args.mock)
     actuator = get_actuator(mock=args.mock, headless=args.headless)
     pruner = UIStatePruner(max_elements=25)
-    engine = LayaReflexEngine(force_mock=bool(args.mock or args.fast))
+    engine = LayaReflexEngine(force_mock=bool(args.mock or args.fast), weights_path=args.weights)
     guardrail = SafetyGuardrail()
     verifier = StateVerifier(max_retries=3)
     llm = get_generative_provider("auto", model_name=args.llm)

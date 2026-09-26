@@ -56,9 +56,16 @@ class LayaReflexEngine:
         device: Optional[str] = None,
         fallback_to_mock: bool = True,
         force_mock: Optional[bool] = None,
+        weights_path: Optional[str] = None,
     ):
         self.checkpoint = checkpoint
         self.subfolder = subfolder
+        self.weights_path = weights_path
+        if self.weights_path is None:
+            default_weights = os.path.join("models", "laya-os-reflex", "best_model.pt")
+            if os.path.exists(default_weights):
+                self.weights_path = default_weights
+
         if device is None:
             try:
                 import torch
@@ -91,6 +98,15 @@ class LayaReflexEngine:
                 device=self.device,
                 fast=True,
             )
+            if self.weights_path and os.path.exists(self.weights_path):
+                import torch
+                logger.info("Loading fine-tuned SFT weights from %s...", self.weights_path)
+                try:
+                    state_dict = torch.load(self.weights_path, map_location=self.device, weights_only=True)
+                    self.agent.model.load_state_dict(state_dict)
+                    logger.info("Successfully loaded fine-tuned SFT weights into Laya Agent.")
+                except Exception as w_err:
+                    logger.warning("Could not load fine-tuned weights (%s). Proceeding with base model.", w_err)
             logger.info("Laya Agent initialized successfully.")
         except Exception as exc:
             if self.fallback_to_mock:

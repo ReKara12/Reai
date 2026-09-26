@@ -1,5 +1,6 @@
 """Unit tests for Laya Reflex Engine decisions, action selection, and latency benchmarking."""
 
+import os
 import time
 import pytest
 from src.orchestrator.models import UIElement, AgentState, ReflexDecision
@@ -220,6 +221,22 @@ def test_browser_hotkey_and_url_navigation_sequence():
     d4 = engine.predict(s4)
     assert d4.action_type == "WAIT"
     assert d4.is_task_completed is True
+
+
+def test_checkpoint_weight_loading_configuration():
+    """Verifies that LayaReflexEngine properly configures weights_path and auto-detects checkpoints."""
+    # Custom weights path provided
+    engine_custom = LayaReflexEngine(weights_path="nonexistent_test_weights.pt", force_mock=True)
+    assert engine_custom.weights_path == "nonexistent_test_weights.pt"
+
+    # Default weights detection
+    engine_default = LayaReflexEngine(force_mock=True)
+    expected_default = os.path.join("models", "laya-os-reflex", "best_model.pt")
+    if os.path.exists(expected_default):
+        assert engine_default.weights_path == expected_default
+    else:
+        assert engine_default.weights_path is None
+
 
 
 
