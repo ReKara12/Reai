@@ -14,6 +14,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+import numpy as np
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -275,19 +276,36 @@ class VoiceThread(QThread if False else QObject):
             self.sig_error.emit(f"Ses donanımı başlatılamadı: {exc}")
             return
 
+        accumulated_audio = []
+        last_speech_time = time.time()
+
         while self._running:
             try:
-                frames = self.audio_stream.get_chunk(timeout=0.15)
-                if frames is not None and len(frames) > 0:
-                    text, is_final = self.stt.transcribe_chunk(frames)
-                    if text and text.strip():
-                        if is_final:
-                            self.sig_final.emit(text.strip())
-                        else:
-                            self.sig_partial.emit(text.strip())
+                chunk = self.audio_stream.get_chunk(timeout=0.1)
+                is_speaking = self.audio_stream.is_recording()
+
+                if chunk is not None:
+                    accumulated_audio.append(chunk)
+                    last_speech_time = time.time()
+
+                    total_samples = sum(len(c) for c in accumulated_audio)
+                    if total_samples >= 8000:  # 0.5 sec of speech
+                        audio_np = np.concatenate(accumulated_audio)
+                        partial_transcript = self.stt.transcribe(audio_np)
+                        if partial_transcript and partial_transcript.strip():
+                            self.sig_partial.emit(partial_transcript.strip())
+
+                if accumulated_audio and not is_speaking:
+                    if time.time() - last_speech_time > 0.35:
+                        full_audio = np.concatenate(accumulated_audio)
+                        accumulated_audio.clear()
+                        final_transcript = self.stt.transcribe(full_audio)
+                        if final_transcript and final_transcript.strip():
+                            self.sig_final.emit(final_transcript.strip())
+
             except Exception as e:
                 logger.debug("Voice read error: %s", e)
-            time.sleep(0.04)
+            time.sleep(0.02)
 
 
 class AgentExecutionWorker(QObject):
