@@ -23,28 +23,32 @@ def main():
         print("  python run.py cli [args]  - Forward arguments to src.main")
         return
 
-    cmd = args[0]
-    if cmd == "test":
-        sys.exit(subprocess.call([sys.executable, "-m", "pytest", "tests/", "-v"], cwd=str(root)))
-    elif cmd == "benchmark":
-        sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--benchmark", "--mock"], cwd=str(root)))
-    elif cmd == "demo":
-        sys.exit(subprocess.call([sys.executable, "run_demo.py"], cwd=str(root)))
-    elif cmd == "hud":
-        sys.exit(subprocess.call([sys.executable, "-m", "src.ui.floating_hud"] + args[1:], cwd=str(root)))
-    elif cmd == "voice":
-        sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--voice"] + args[1:], cwd=str(root)))
-    elif cmd == "train":
-        train_data_path = root / "data" / "train_os_reflex.json"
-        if not train_data_path.exists():
-            print("Generating synthetic OS reflex dataset...")
-            subprocess.run([sys.executable, "src/training/dataset_generator.py"], cwd=str(root), check=True)
-        sys.exit(subprocess.call([sys.executable, "src/training/train_laya.py"] + args[1:], cwd=str(root)))
-    elif cmd == "cli":
-        sys.exit(subprocess.call([sys.executable, "-m", "src.main"] + args[1:], cwd=str(root)))
-    else:
-        print(f"Unknown command: {cmd}")
-        sys.exit(1)
+    try:
+        cmd = args[0]
+        if cmd == "test":
+            sys.exit(subprocess.call([sys.executable, "-m", "pytest", "tests/", "-v"], cwd=str(root)))
+        elif cmd == "benchmark":
+            sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--benchmark", "--mock"], cwd=str(root)))
+        elif cmd == "demo":
+            sys.exit(subprocess.call([sys.executable, "run_demo.py"], cwd=str(root)))
+        elif cmd == "hud":
+            sys.exit(subprocess.call([sys.executable, "-m", "src.ui.floating_hud"] + args[1:], cwd=str(root)))
+        elif cmd == "voice":
+            sys.exit(subprocess.call([sys.executable, "-m", "src.main", "--voice"] + args[1:], cwd=str(root)))
+        elif cmd == "train":
+            train_data_path = root / "data" / "train_os_reflex.json"
+            if not train_data_path.exists():
+                print("Generating synthetic OS reflex dataset...")
+                subprocess.run([sys.executable, "src/training/dataset_generator.py"], cwd=str(root), check=True)
+            sys.exit(subprocess.call([sys.executable, "src/training/train_laya.py"] + args[1:], cwd=str(root)))
+        elif cmd == "cli":
+            sys.exit(subprocess.call([sys.executable, "-m", "src.main"] + args[1:], cwd=str(root)))
+        else:
+            print(f"Unknown command: {cmd}")
+            sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nİşlem kullanıcı tarafından durduruldu.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

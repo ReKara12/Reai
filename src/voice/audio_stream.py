@@ -50,16 +50,21 @@ class AudioCaptureStream:
         try:
             from pynput import keyboard
 
-            def on_press(key):
+            def _is_match(key) -> bool:
                 key_str = str(key).lower().replace("key.", "")
-                if self.ptt_key_name in key_str or key_str == self.ptt_key_name:
+                target = self.ptt_key_name.lower()
+                if target in ("alt_r", "alt_gr", "altgr"):
+                    return any(k in key_str for k in ("alt_r", "alt_gr", "altgr", "menu"))
+                return target in key_str or key_str == target
+
+            def on_press(key):
+                if _is_match(key):
                     if not self._ptt_pressed:
                         self._ptt_pressed = True
                         logger.info("[PUSH-TO-TALK] Activated (Key pressed). Listening...")
 
             def on_release(key):
-                key_str = str(key).lower().replace("key.", "")
-                if self.ptt_key_name in key_str or key_str == self.ptt_key_name:
+                if _is_match(key):
                     if self._ptt_pressed:
                         self._ptt_pressed = False
                         logger.info("[PUSH-TO-TALK] Released. Processing speech utterance.")
@@ -69,7 +74,7 @@ class AudioCaptureStream:
             )
             self._keyboard_listener.daemon = True
             self._keyboard_listener.start()
-            logger.info("Global Push-to-Talk listener armed on '%s'.", self.ptt_key_name)
+            logger.info("Global Push-to-Talk listener armed on '%s' (supports Alt_R & Alt_Gr).", self.ptt_key_name)
         except Exception as exc:
             logger.warning("Could not initialize global keyboard listener (%s). Operating in VAD mode.", exc)
             self.push_to_talk = False
@@ -154,6 +159,11 @@ class AudioCaptureStream:
         if self.push_to_talk:
             return self._ptt_pressed
         return self._is_speaking
+
+    def set_manual_recording(self, recording: bool) -> None:
+        """Manually sets recording state (e.g. from UI mic toggle button)."""
+        self._ptt_pressed = recording
+        self._is_speaking = recording
 
     def simulate_audio_input(self, audio_data: np.ndarray) -> None:
         """Helper for unit tests: injects simulated audio chunk into buffer."""

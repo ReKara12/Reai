@@ -133,6 +133,19 @@ QLabel#TranscriptLabel {
     font-weight: 500;
 }
 
+QPushButton#MicToggleBtn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 14px;
+    border-radius: 12px;
+    padding: 2px 5px;
+}
+QPushButton#MicToggleBtn:hover {
+    color: #00e5ff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
 QPushButton#SettingsGearBtn {
     background: transparent;
     border: none;
@@ -297,6 +310,14 @@ class VoiceThread(QThread):
             self.stop_listening()
             self.wait(500)
             self.start_listening()
+
+    def toggle_manual_recording(self) -> bool:
+        """Toggles manual recording state on/off, returning new state."""
+        if self.audio_stream:
+            new_state = not self.audio_stream.is_recording()
+            self.audio_stream.set_manual_recording(new_state)
+            return new_state
+        return False
 
     def run(self):
         try:
@@ -548,6 +569,13 @@ class FloatingHUD(QMainWindow):
         self.lbl_transcript.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         pill_layout.addWidget(self.lbl_transcript)
 
+        # Microphone toggle button
+        self.btn_mic = QPushButton("🎙️")
+        self.btn_mic.setObjectName("MicToggleBtn")
+        self.btn_mic.setToolTip("Konuşmak için tıklayın veya 'Alt_R' / 'Alt Gr' basılı tutun")
+        self.btn_mic.clicked.connect(self._toggle_mic_click)
+        pill_layout.addWidget(self.btn_mic)
+
         # Settings gear icon
         self.btn_settings = QPushButton("⚙")
         self.btn_settings.setObjectName("SettingsGearBtn")
@@ -637,7 +665,19 @@ class FloatingHUD(QMainWindow):
 
     def _on_backend_ready(self):
         self.pulse.set_color("#10b981")
-        self.lbl_transcript.setText("Konuşmak için Alt_R basılı tutun...")
+        self.lbl_transcript.setText("Konuşmak için Alt_R / Alt Gr basılı tutun...")
+
+    def _toggle_mic_click(self):
+        """Toggles voice recording directly from mouse click on the mic button."""
+        is_rec = self.voice_worker.toggle_manual_recording()
+        if is_rec:
+            self.pulse.set_color("#8b5cf6")
+            self.lbl_transcript.setText("🎙️ Dinleniyor... (Bitince tekrar tıklayın)")
+            self.btn_mic.setStyleSheet("color: #ef4444; background: rgba(239, 68, 68, 0.2);")
+        else:
+            self.pulse.set_color("#10b981")
+            self.lbl_transcript.setText("İşleniyor...")
+            self.btn_mic.setStyleSheet("")
 
     def _toggle_settings(self):
         is_visible = not self.settings_card.isVisible()
@@ -719,7 +759,9 @@ class FloatingHUD(QMainWindow):
 
     def _reset_idle(self):
         self.pulse.set_color("#10b981")
-        self.lbl_transcript.setText("Konuşmak için Alt_R basılı tutun...")
+        self.lbl_transcript.setText("Konuşmak için Alt_R / Alt Gr basılı tutun...")
+        if hasattr(self, "btn_mic"):
+            self.btn_mic.setStyleSheet("")
 
     def closeEvent(self, event):
         self.voice_worker.stop_listening()
@@ -740,11 +782,38 @@ class FloatingHUD(QMainWindow):
 
 def launch_hud(mock: bool = False, enable_voice: bool = True):
     """Launches the minimal black Dynamic Island overlay."""
+    import signal
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)
     hud = FloatingHUD(mock_mode=mock, enable_voice=enable_voice)
     hud.show()
-    return app.exec_()
+    hud.raise_()
+    hud.activateWindow()
+
+    # Periodic timer so Python interpreter catches SIGINT / Ctrl+C
+    sig_timer = QTimer()
+    sig_timer.start(250)
+    sig_timer.timeout.connect(lambda: None)
+
+    def _sigint_handler(sig, frame):
+        print("\nDynamic Island kapatılıyor...", flush=True)
+        hud.close()
+        app.quit()
+
+    signal.signal(signal.SIGINT, _sigint_handler)
+
+    print("\n" + "=" * 60)
+    print("  ✨ ReAI Dynamic Island Overlay Aktif!")
+    print("  📍 Konum: Ekranın en üst-orta kısmında süzülüyor")
+    print("  🎙️ Sesli Komut: 'Alt_R' / 'Alt Gr' basılı tutun veya 🎙️ tıklayın")
+    print("  ⚙️ Ayarlar & Mikrofon: Hapın sağındaki dişli simgesi")
+    print("  ❌ Çıkış: Terminalde Ctrl+C")
+    print("=" * 60 + "\n", flush=True)
+
+    try:
+        ret = app.exec_()
+    except KeyboardInterrupt:
+        ret = 0
+    return ret
 
 
 if __name__ == "__main__":
