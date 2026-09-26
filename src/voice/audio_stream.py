@@ -1,5 +1,6 @@
 """Audio capture stream with ring-buffer, Push-to-Talk hotkey, and VAD energy gating."""
 
+import sys
 import time
 import math
 import queue
@@ -39,11 +40,62 @@ class AudioCaptureStream:
         self._is_active = False
         self._is_speaking = False
         self._ptt_pressed = False
+        self._manual_override = False
+        self._is_active_poller = False
+        self._poller_thread: Optional[threading.Thread] = None
         self._stream = None
         self._keyboard_listener = None
 
         if self.push_to_talk:
+            if sys.platform == "win32":
+                self._start_win32_key_poller()
             self._init_ptt_listener()
+
+    def _start_win32_key_poller(self) -> None:
+        """Kernel-level GetAsyncKeyState poller for Alt Gr / Right Alt on Windows.
+        
+        Bypasses Windows low-level hook blocks and reliably captures Alt Gr in Turkish,
+        European, and US keyboards.
+        """
+        import ctypes
+        user32 = ctypes.windll.user32
+        VK_RMENU = 0xA5  # Right Alt / Alt Gr
+        VK_LMENU = 0xA4  # Left Alt
+        VK_MENU = 0x12   # Any Alt
+
+        def poller():
+            was_down = False
+            while self._is_active_poller:
+                try:
+                    target = self.ptt_key_name.lower()
+                    if target in ("alt_r", "alt_gr", "altgr"):
+                        is_down = bool(user32.GetAsyncKeyState(VK_RMENU) & 0x8000)
+                    elif target in ("alt_l", "altl"):
+                        is_down = bool(user32.GetAsyncKeyState(VK_LMENU) & 0x8000)
+                    elif "alt" in target:
+                        is_down = bool(user32.GetAsyncKeyState(VK_MENU) & 0x8000)
+                    else:
+                        is_down = bool(user32.GetAsyncKeyState(VK_RMENU) & 0x8000)
+
+                    if not self._manual_override:
+                        if is_down and not was_down:
+                            was_down = True
+                            self._ptt_pressed = True
+                            self._is_speaking = True
+                            logger.info("[PUSH-TO-TALK] Windows Alt Gr (VK_RMENU) down. Recording...")
+                        elif not is_down and was_down:
+                            was_down = False
+                            self._ptt_pressed = False
+                            self._is_speaking = False
+                            logger.info("[PUSH-TO-TALK] Windows Alt Gr (VK_RMENU) up. Finalizing...")
+                except Exception:
+                    pass
+                time.sleep(0.015)
+
+        self._is_active_poller = True
+        self._poller_thread = threading.Thread(target=poller, daemon=True)
+        self._poller_thread.start()
+        logger.info("Windows GetAsyncKeyState PTT poller started for '%s'.", self.ptt_key_name)
 
     def _init_ptt_listener(self) -> None:
         """Initializes global keyboard hook for push-to-talk key states."""
@@ -133,6 +185,7 @@ class AudioCaptureStream:
     def stop(self) -> None:
         """Stops the audio capture stream."""
         self._is_active = False
+        self._is_active_poller = False
         if self._keyboard_listener:
             try:
                 self._keyboard_listener.stop()
@@ -162,6 +215,7 @@ class AudioCaptureStream:
 
     def set_manual_recording(self, recording: bool) -> None:
         """Manually sets recording state (e.g. from UI mic toggle button)."""
+        self._manual_override = recording
         self._ptt_pressed = recording
         self._is_speaking = recording
 

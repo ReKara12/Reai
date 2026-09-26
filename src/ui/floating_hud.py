@@ -18,11 +18,13 @@ except ImportError:
 
 import sys
 if sys.platform == "win32":
-    import io
-    if hasattr(sys.stdout, "buffer"):
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "buffer"):
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 import json
 import time
@@ -35,7 +37,7 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFrame, QComboBox, QCheckBox,
-    QSizePolicy
+    QSizePolicy, QTextEdit
 )
 from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QObject, QThread
 from PyQt5.QtGui import QColor, QFont, QPainter, QBrush, QPen
@@ -51,6 +53,7 @@ from ..actuator.mouse_keyboard import get_actuator
 from ..generative.llm_fallback import get_generative_provider
 from ..voice.audio_stream import AudioCaptureStream
 from ..voice.stt_engine import StreamingWhisperSTT
+from ..utils.activity_logger import activity_logger
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +129,16 @@ def save_mic_index(index: int):
 
 
 DYNAMIC_ISLAND_STYLE = """
-/* Minimal Dynamic Island */
+/* Glassy Black Main Container */
+QFrame#MainWrapper {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(22, 27, 36, 0.96), stop:1 rgba(11, 14, 20, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 24px;
+}
+
 QFrame#IslandPill {
-    background-color: #06070a;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 22px;
+    background: transparent;
+    border: none;
 }
 
 QLabel#TranscriptLabel {
@@ -140,36 +148,31 @@ QLabel#TranscriptLabel {
     font-weight: 500;
 }
 
-QPushButton#MicToggleBtn {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 14px;
+/* Glassy Action Buttons on Island Pill */
+QPushButton#MicToggleBtn, QPushButton#LogToggleBtn, QPushButton#SettingsGearBtn {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 12px;
-    padding: 2px 5px;
+    color: #cbd5e1;
+    font-size: 13px;
+    padding: 3px 6px;
+    min-width: 28px;
+    min-height: 26px;
 }
-QPushButton#MicToggleBtn:hover {
-    color: #00e5ff;
-    background-color: rgba(255, 255, 255, 0.14);
-}
-
-QPushButton#SettingsGearBtn {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 15px;
-    border-radius: 12px;
-    padding: 2px 6px;
-}
-QPushButton#SettingsGearBtn:hover {
+QPushButton#MicToggleBtn:hover, QPushButton#LogToggleBtn:hover, QPushButton#SettingsGearBtn:hover {
     color: #ffffff;
-    background-color: rgba(255, 255, 255, 0.14);
+    background-color: rgba(255, 255, 255, 0.20);
+    border: 1px solid rgba(255, 255, 255, 0.30);
+}
+QPushButton#MicToggleBtn:pressed, QPushButton#LogToggleBtn:pressed, QPushButton#SettingsGearBtn:pressed {
+    background-color: rgba(0, 229, 255, 0.28);
+    border: 1px solid #00e5ff;
 }
 
-/* Settings Drawer */
-QFrame#SettingsCard {
-    background-color: #0a0c12;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+/* Settings Drawer & Log Drawer Cards */
+QFrame#SettingsCard, QFrame#LogCard {
+    background-color: rgba(14, 18, 26, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 16px;
     padding: 12px;
 }
@@ -180,6 +183,17 @@ QLabel.SettingHeader {
     font-weight: bold;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+/* Real-time Activity Log Terminal Display */
+QTextEdit#LogDisplay {
+    background-color: #07090e;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: #e2e8f0;
+    font-family: 'Consolas', 'Cascadia Code', monospace;
+    font-size: 11px;
 }
 
 QComboBox {
@@ -231,10 +245,10 @@ QPushButton.SecondaryButton {
     border-radius: 8px;
     color: #cbd5e1;
     font-size: 11px;
-    padding: 6px 12px;
+    padding: 5px 10px;
 }
 QPushButton.SecondaryButton:hover {
-    background-color: rgba(255, 255, 255, 0.16);
+    background-color: rgba(255, 255, 255, 0.18);
     color: #ffffff;
 }
 
@@ -498,8 +512,13 @@ class AgentExecutionWorker(QObject):
         self.sig_finished.emit("MAX_STEPS", sm.step_count)
 
 
+class LogBridge(QObject):
+    """Bridge for cross-thread log signals."""
+    sig_log = pyqtSignal(str, str, str)
+
+
 class FloatingHUD(QMainWindow):
-    """Clean, pure black Dynamic Island with expandable Settings drawer."""
+    """Glassy black Dynamic Island with expandable Settings and Activity Log drawers."""
 
     def __init__(self, mock_mode: bool = False, enable_voice: bool = True, parent=None):
         super().__init__(parent)
@@ -514,13 +533,18 @@ class FloatingHUD(QMainWindow):
             Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(460)
+        self.setFixedWidth(520)
 
         # Position at top center of primary monitor
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.width()) // 2
         y = 20
         self.move(x, y)
+
+        # Activity Log Bridge
+        self.log_bridge = LogBridge(self)
+        self.log_bridge.sig_log.connect(self._append_log_entry, Qt.QueuedConnection)
+        activity_logger.register_callback(lambda t, c, m: self.log_bridge.sig_log.emit(t, c, m))
 
         # Non-blocking async backend worker
         self.exec_worker = AgentExecutionWorker(mock_mode=self.mock_mode)
@@ -551,20 +575,29 @@ class FloatingHUD(QMainWindow):
         self.root_widget.setStyleSheet("background: transparent;")
         self.setCentralWidget(self.root_widget)
 
-        self.main_layout = QVBoxLayout(self.root_widget)
-        self.main_layout.setContentsMargins(6, 6, 6, 6)
-        self.main_layout.setSpacing(8)
+        root_layout = QVBoxLayout(self.root_widget)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # Solid Glassy Obsidian Black Main Wrapper
+        self.main_wrapper = QFrame()
+        self.main_wrapper.setObjectName("MainWrapper")
+        root_layout.addWidget(self.main_wrapper)
+
+        self.wrapper_layout = QVBoxLayout(self.main_wrapper)
+        self.wrapper_layout.setContentsMargins(12, 6, 12, 6)
+        self.wrapper_layout.setSpacing(6)
 
         # -------------------------------------------------------------
-        # 1. THE DYNAMIC ISLAND (Small, Sleek, Pure Black Pill)
+        # 1. THE DYNAMIC ISLAND (Small, Sleek, Glassy Black Pill)
         # -------------------------------------------------------------
         self.island_pill = QFrame()
         self.island_pill.setObjectName("IslandPill")
         self.island_pill.setFixedHeight(44)
 
         pill_layout = QHBoxLayout(self.island_pill)
-        pill_layout.setContentsMargins(14, 4, 12, 4)
-        pill_layout.setSpacing(10)
+        pill_layout.setContentsMargins(4, 2, 4, 2)
+        pill_layout.setSpacing(8)
 
         # Pulsing LED indicator
         self.pulse = PulseIndicator()
@@ -583,6 +616,13 @@ class FloatingHUD(QMainWindow):
         self.btn_mic.clicked.connect(self._toggle_mic_click)
         pill_layout.addWidget(self.btn_mic)
 
+        # Activity Log drawer toggle button
+        self.btn_logs = QPushButton("📋")
+        self.btn_logs.setObjectName("LogToggleBtn")
+        self.btn_logs.setToolTip("Canlı Etkinlik Günlüğü (Dediklerim & Yapılan İşlemler)")
+        self.btn_logs.clicked.connect(self._toggle_logs)
+        pill_layout.addWidget(self.btn_logs)
+
         # Settings gear icon
         self.btn_settings = QPushButton("⚙")
         self.btn_settings.setObjectName("SettingsGearBtn")
@@ -590,10 +630,53 @@ class FloatingHUD(QMainWindow):
         self.btn_settings.clicked.connect(self._toggle_settings)
         pill_layout.addWidget(self.btn_settings)
 
-        self.main_layout.addWidget(self.island_pill)
+        self.wrapper_layout.addWidget(self.island_pill)
 
         # -------------------------------------------------------------
-        # 2. EXPANDABLE SETTINGS CARD (Hidden by default)
+        # 2. EXPANDABLE ACTIVITY LOG CARD (Hidden by default)
+        # -------------------------------------------------------------
+        self.log_card = QFrame()
+        self.log_card.setObjectName("LogCard")
+        self.log_card.setVisible(False)
+
+        log_layout = QVBoxLayout(self.log_card)
+        log_layout.setContentsMargins(12, 10, 12, 12)
+        log_layout.setSpacing(8)
+
+        log_hdr = QHBoxLayout()
+        lbl_log_hdr = QLabel("📋 Canlı Etkinlik Günlüğü (Ses & Eylem)")
+        lbl_log_hdr.setProperty("class", "SettingHeader")
+        log_hdr.addWidget(lbl_log_hdr)
+        log_hdr.addStretch()
+
+        btn_open_logfile = QPushButton("📁 Dosyayı Aç")
+        btn_open_logfile.setProperty("class", "SecondaryButton")
+        btn_open_logfile.setToolTip("logs/agent_activity.log dosyasını aç")
+        btn_open_logfile.clicked.connect(self._open_log_file)
+        log_hdr.addWidget(btn_open_logfile)
+
+        btn_clear_log = QPushButton("🗑️ Temizle")
+        btn_clear_log.setProperty("class", "SecondaryButton")
+        btn_clear_log.clicked.connect(self._clear_log_display)
+        log_hdr.addWidget(btn_clear_log)
+
+        btn_close_log = QPushButton("✕")
+        btn_close_log.setFixedSize(20, 20)
+        btn_close_log.setStyleSheet("background: transparent; color: #94a3b8; border: none; font-size: 11px;")
+        btn_close_log.clicked.connect(lambda: self.log_card.setVisible(False))
+        log_hdr.addWidget(btn_close_log)
+        log_layout.addLayout(log_hdr)
+
+        self.txt_log_display = QTextEdit()
+        self.txt_log_display.setObjectName("LogDisplay")
+        self.txt_log_display.setReadOnly(True)
+        self.txt_log_display.setFixedHeight(175)
+        log_layout.addWidget(self.txt_log_display)
+
+        self.wrapper_layout.addWidget(self.log_card)
+
+        # -------------------------------------------------------------
+        # 3. EXPANDABLE SETTINGS CARD (Hidden by default)
         # -------------------------------------------------------------
         self.settings_card = QFrame()
         self.settings_card.setObjectName("SettingsCard")
@@ -667,7 +750,7 @@ class FloatingHUD(QMainWindow):
         self.chk_destructive = QCheckBox("Yıkıcı eylemlere (silme, kaldırma vb.) izin ver")
         card_layout.addWidget(self.chk_destructive)
 
-        self.main_layout.addWidget(self.settings_card)
+        self.wrapper_layout.addWidget(self.settings_card)
         self.adjustSize()
 
     def _on_backend_ready(self):
@@ -688,8 +771,53 @@ class FloatingHUD(QMainWindow):
 
     def _toggle_settings(self):
         is_visible = not self.settings_card.isVisible()
+        if is_visible and self.log_card.isVisible():
+            self.log_card.setVisible(False)
         self.settings_card.setVisible(is_visible)
         self.adjustSize()
+
+    def _toggle_logs(self):
+        is_visible = not self.log_card.isVisible()
+        if is_visible and self.settings_card.isVisible():
+            self.settings_card.setVisible(False)
+        self.log_card.setVisible(is_visible)
+        self.adjustSize()
+
+    def _open_log_file(self):
+        log_path = activity_logger.get_full_log_path()
+        try:
+            if sys.platform == "win32":
+                os.startfile(log_path)
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", log_path])
+        except Exception as e:
+            logger.warning("Could not open log file: %s", e)
+
+    def _clear_log_display(self):
+        self.txt_log_display.clear()
+        activity_logger.clear_history()
+
+    def _append_log_entry(self, short_time: str, category: str, message: str):
+        color = "#94a3b8"
+        if "SES" in category:
+            color = "#c084fc"
+        elif "HEDEF" in category:
+            color = "#38bdf8"
+        elif "REFLEKS" in category:
+            color = "#00e5ff"
+        elif "ADIM" in category:
+            color = "#fbbf24"
+        elif "SONUÇ" in category:
+            color = "#34d399"
+        elif "GÜVENLİK" in category or "HATA" in category:
+            color = "#f87171"
+
+        html_line = f"<div style='margin-bottom: 3px;'><span style='color: #64748b;'>[{short_time}]</span> <b style='color: {color};'>[{category}]</b> <span style='color: #f1f5f9;'>{message}</span></div>"
+        self.txt_log_display.append(html_line)
+        sb = self.txt_log_display.verticalScrollBar()
+        if sb:
+            sb.setValue(sb.maximum())
 
     def _on_mic_changed(self, row: int):
         if row < 0 or row >= len(self.mics_list):
@@ -698,12 +826,15 @@ class FloatingHUD(QMainWindow):
         self.selected_mic_index = mic_idx
         save_mic_index(mic_idx)
         self.voice_worker.update_mic_index(mic_idx)
-        self.lbl_transcript.setText(f"Mikrofon seçildi: {mic_name[:25]}...")
+        activity_logger.log("DONANIM", f"🎙️ Aktif Mikrofon: {mic_name}")
+        self.lbl_transcript.setText(f"Mikrofon: {mic_name[:25]}...")
 
     def _toggle_mode(self):
         self.mock_mode = not self.mock_mode
         self.btn_mode_toggle.setText("Simülasyon (Mock)" if self.mock_mode else "Gerçek Masaüstü (Physical)")
         self.exec_worker.set_mode(self.mock_mode)
+        mode_str = "Simülasyon (Mock)" if self.mock_mode else "Gerçek Masaüstü (Physical)"
+        activity_logger.log("MOD_DEĞİŞTİ", f"⚙️ Çalışma Modu: {mode_str}")
         self.lbl_transcript.setText(f"Mod: {'Mock' if self.mock_mode else 'Physical'}")
 
     def _on_manual_run(self):
@@ -712,9 +843,11 @@ class FloatingHUD(QMainWindow):
             return
         self.settings_card.setVisible(False)
         self.adjustSize()
+        activity_logger.log("MANUEL_KOMUT", f'⌨️ Klavye ile komut: "{goal}"')
         self.run_goal(goal)
 
     def run_goal(self, goal: str):
+        activity_logger.log_goal_understood(goal)
         self.pulse.set_color("#00e5ff")
         self.lbl_transcript.setText(f"Hedef: '{goal}'")
 
@@ -735,23 +868,28 @@ class FloatingHUD(QMainWindow):
         self.lbl_transcript.setText(f"🎙️ \"{partial_text}\"")
 
     def _on_voice_final(self, final_text: str):
+        activity_logger.log_voice_heard(final_text)
         self.lbl_transcript.setText(f"\"{final_text}\"")
         self.run_goal(final_text)
 
     def _on_voice_error(self, err: str):
+        activity_logger.log_error(f"Mikrofon / Ses Hatası: {err}")
         self.pulse.set_color("#ef4444")
         self.lbl_transcript.setText(err[:38])
 
     # Agent Execution Callbacks
     def _on_anticipation(self, action: str, target: str, latency: float):
+        activity_logger.log_anticipation(action, target, latency)
         self.pulse.set_color("#00e5ff")
         self.lbl_transcript.setText(f"⚡ [{action}] ➔ {target} ({latency:.0f}ms)")
 
     def _on_step(self, step_num: int, action: str, target: str):
+        activity_logger.log_action_step(step_num, action, target)
         self.pulse.set_color("#38bdf8")
         self.lbl_transcript.setText(f"Adım {step_num}: {action} ➔ {target}")
 
     def _on_finished(self, status: str, step_count: int):
+        activity_logger.log_finished(status, step_count)
         if status == "SUCCESS":
             self.pulse.set_color("#10b981")
             self.lbl_transcript.setText(f"✓ Tamamlandı ({step_count} adım)")
@@ -808,13 +946,15 @@ def launch_hud(mock: bool = False, enable_voice: bool = True):
 
     signal.signal(signal.SIGINT, _sigint_handler)
 
-    print("\n" + "=" * 60)
-    print("  ✨ ReAI Dynamic Island Overlay Aktif!")
+    print("\n" + "=" * 62)
+    print("  ✨ ReAI Glassy Black Dynamic Island Overlay Aktif!")
     print("  📍 Konum: Ekranın en üst-orta kısmında süzülüyor")
-    print("  🎙️ Sesli Komut: 'Alt_R' / 'Alt Gr' basılı tutun veya 🎙️ tıklayın")
-    print("  ⚙️ Ayarlar & Mikrofon: Hapın sağındaki dişli simgesi")
+    print("  🎙️ Sesli Komut: 'Alt Gr' (veya 'Alt_R') basılı tutun ya da 🎙️ tıklayın")
+    print("  📋 Canlı Log: Hapın sağındaki 📋 simgesi (Dediklerim & Yapılanlar)")
+    print("  ⚙️ Ayarlar & Mikrofon: Hapın sağındaki ⚙ dişli simgesi")
+    print("  📁 Log Dosyası: logs/agent_activity.log")
     print("  ❌ Çıkış: Terminalde Ctrl+C")
-    print("=" * 60 + "\n", flush=True)
+    print("=" * 62 + "\n", flush=True)
 
     try:
         ret = app.exec_()

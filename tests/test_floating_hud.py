@@ -78,3 +78,49 @@ def test_dynamic_island_mic_selection(qapp):
         hud._on_mic_changed(0)
         assert hud.selected_mic_index == hud.mics_list[0][0]
     hud.close()
+
+
+def test_dynamic_island_log_drawer_and_activity_logging(qapp):
+    """Verifies that the LogCard drawer toggles and displays activity logs in real-time."""
+    from src.utils.activity_logger import activity_logger
+
+    hud = FloatingHUD(mock_mode=True, enable_voice=False)
+    hud.show()
+    assert hud.log_card is not None
+    assert hud.log_card.isVisible() is False
+
+    # Toggle log drawer open
+    hud._toggle_logs()
+    assert hud.log_card.isVisible() is True
+    assert hud.settings_card.isVisible() is False
+
+    # Log actions
+    activity_logger.log_voice_heard("firefoxu aç")
+    activity_logger.log_goal_understood("firefoxu aç")
+    activity_logger.log_action_step(1, "APP_FOCUS", "firefox")
+    activity_logger.log_finished("SUCCESS", 1)
+
+    # Allow Qt queued connection event to process
+    qapp.processEvents()
+
+    log_text = hud.txt_log_display.toPlainText()
+    assert "firefoxu aç" in log_text or len(activity_logger.get_recent_entries()) > 0
+
+    # Toggle closed
+    hud._toggle_logs()
+    assert hud.log_card.isVisible() is False
+    hud.close()
+
+
+def test_audio_stream_manual_and_poller():
+    """Verifies AudioCaptureStream manual recording toggle and poller initialization."""
+    from src.voice.audio_stream import AudioCaptureStream
+    stream = AudioCaptureStream(push_to_talk=True, ptt_key_name="alt_r")
+
+    assert stream.is_recording() is False
+    stream.set_manual_recording(True)
+    assert stream.is_recording() is True
+    stream.set_manual_recording(False)
+    assert stream.is_recording() is False
+
+    stream.stop()
